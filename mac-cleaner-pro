@@ -1,0 +1,144 @@
+#!/bin/bash
+
+APP_DIR="/Applications"
+LIB_DIR="$HOME/Library"
+
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+BLUE="\033[34m"
+RESET="\033[0m"
+
+print_header() {
+echo -e "${BLUE}"
+echo "=============================================="
+echo "        macOS Cleaner Pro CLI"
+echo "=============================================="
+echo -e "${RESET}"
+}
+
+scan_orphan_data() {
+
+folders=("Caches" "Logs" "Application Support" "Containers")
+
+targets=()
+total_size=0
+
+echo -e "${YELLOW}Scanning Library for orphan app data...${RESET}"
+echo ""
+
+for folder in "${folders[@]}"; do
+
+path="$LIB_DIR/$folder"
+[ -d "$path" ] || continue
+
+for item in "$path"/*; do
+[ -e "$item" ] || continue
+
+name=$(basename "$item")
+app=$(ls "$APP_DIR" | grep -i "$name" | head -1)
+
+if [ -z "$app" ]; then
+
+size=$(du -sk "$item" 2>/dev/null | cut -f1)
+size_hr=$(du -sh "$item" 2>/dev/null | cut -f1)
+
+printf "${RED}ORPHAN${RESET} %-35s %8s\n" "$name" "$size_hr"
+
+targets+=("$item")
+total_size=$((total_size + size))
+
+fi
+done
+done
+
+echo ""
+
+total_mb=$((total_size / 1024))
+total_gb=$(awk "BEGIN {printf \"%.2f\", $total_mb/1024}")
+
+echo -e "${GREEN}Potential cleanup: ${total_mb} MB (~${total_gb} GB)${RESET}"
+echo ""
+
+}
+
+clean_targets() {
+
+echo -e "${YELLOW}Delete orphan data? (y/N)${RESET}"
+read confirm
+
+if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+echo "Cancelled."
+return
+fi
+
+echo ""
+echo -e "${BLUE}Cleaning orphan data...${RESET}"
+
+freed=0
+
+for item in "${targets[@]}"; do
+
+size=$(du -sk "$item" 2>/dev/null | cut -f1)
+size_hr=$(du -sh "$item" 2>/dev/null | cut -f1)
+
+printf "Removing %-35s %8s\n" "$(basename "$item")" "$size_hr"
+
+rm -rf "$item"
+
+freed=$((freed + size))
+
+done
+
+freed_mb=$((freed / 1024))
+freed_gb=$(awk "BEGIN {printf \"%.2f\", $freed_mb/1024}")
+
+echo ""
+echo -e "${GREEN}Freed: ${freed_mb} MB (~${freed_gb} GB)${RESET}"
+}
+
+clean_dev_cache() {
+
+echo ""
+echo -e "${YELLOW}Developer cache cleanup${RESET}"
+
+if command -v brew >/dev/null; then
+echo "Cleaning Homebrew cache..."
+brew cleanup
+fi
+
+if command -v npm >/dev/null; then
+echo "Cleaning npm cache..."
+npm cache clean --force >/dev/null 2>&1
+fi
+
+if command -v pip >/dev/null; then
+echo "Cleaning pip cache..."
+pip cache purge >/dev/null 2>&1
+fi
+
+}
+
+show_disk_usage() {
+
+echo ""
+echo -e "${BLUE}Top Library usage:${RESET}"
+du -h -d 1 ~/Library | sort -hr | head -10
+
+}
+
+main() {
+
+print_header
+show_disk_usage
+echo ""
+scan_orphan_data
+clean_targets
+clean_dev_cache
+
+echo ""
+echo -e "${GREEN}Done.${RESET}"
+
+}
+
+main
